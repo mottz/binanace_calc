@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # This is a comment and does not run as code.
 # these next two lines import libraries into the code so we can use the functions provided by them.
 from binance.client import Client
@@ -75,10 +76,72 @@ except IndexError:
     pass
 ###############
 
-# Get open position for this coin.
-# NOTE: "coin[:-3]" is used to convert trading pairs to assets (e.g. ADAUSD to ADA ).
-# NOTE: If you have 100 coins and an active Sell Limit order for 50 coins, this will report that you have 50 coins.
-position = client.get_asset_balance(asset=coin[:-3])
+
+def get_open_pos(coin):
+    # Get the free balance of the coin asset.
+    # NOTE:If you have an open sell order the 'free' balance will not include these assets.
+    #      the same is true for open buy orders, which is why we
+    #      can't just add up free and locked assets to get the total.
+    # Data Example: {'asset': 'HBAR', 'free': '3.00012300', 'locked': '0.00000000'}
+    asset = coin[:-3]
+    balance = client.get_asset_balance(asset=asset)
+    return balance['free']
+
+def realizedpl(orders):
+
+    buy = 0
+    rpl = 0
+    lastBuy = 0
+    buycount = 0
+    sellcount = 0
+    #print(json.dumps(position, indent=1))
+    #exit()
+    sells = []
+    buys = []
+
+
+    for p in orders:
+        if p['side'] == 'BUY' and p['status'] == 'FILLED':
+            # num of coins
+            #print(p['cummulativeQuoteQty'])
+            buy = Decimal(p['cummulativeQuoteQty'])
+            # cost
+            lastBuy += Decimal(p['cummulativeQuoteQty'])
+            # over write var with last buy qty
+            buycount += 1
+            #print("buy")
+            # add buy qty to list
+            buys.append(buy)
+        elif p['side'] == 'SELL' and p['status'] == 'FILLED':
+            sellcount += 1
+            # sell amount
+            sqqt = Decimal(p['cummulativeQuoteQty'])
+            # update sell list
+            sells.append(sqqt)
+    # calculate the difference in buys vs sells.
+    if len(buys) - len(sells) > 0:
+        # the difference is stored in var 'hold'.
+        hold = len(buys) - len(sells)
+        # Trim the last n buys from the buys list.
+        buys = buys[:len(buys) - hold]
+        # Add up buy amount.
+        tbuys = sum(buys)
+        # Add up the sell amount.
+        tsells = sum(sells)
+
+    else:
+        tbuys = sum(buys)
+        # Add up the sell amount.
+        tsells = sum(sells)
+        # calculate the realized profit or loss.
+    #print(f"buys list: {tbuys}")
+    #print(f"sells list: {tsells}")
+    # #print(f"hold over: {hold}")
+    # exit(0)
+
+    #print(f"buy count: {buycount}")
+    #print(f"sell count: {sellcount}")
+    return tsells - tbuys
 
 # these variables are set so we can increment them in the for loop below.
 buyp: int = 0
@@ -127,15 +190,15 @@ print(f"Current: {str(cPrice['price'])}")
 print("  ")
 print("-----------------------------------")
 
-# find the profit and loss for all transactions.
-pl = sellp-buyp
+# Call the profit and loss function.
+pl = realizedpl(orders)
 
 if pl < 0:
     # set the color to red if the P&L is negative.
-    print(f"P/L: {bcolors.FAIL}{pl}{bcolors.ENDC}")
+    print(f"Realized P/L: {bcolors.FAIL}{pl}{bcolors.ENDC}")
 else:
     # set the color to green is the P&L is positive.
-    print(f"P/L: {bcolors.OKGREEN}{pl}{bcolors.ENDC}")
+    print(f"Realized P/L: {bcolors.OKGREEN}{pl}{bcolors.ENDC}")
 
 if Decimal(coinPrice)-avgbuy < 0:
     # Set the color to red is the current price is lower than our average buy price.
@@ -145,7 +208,7 @@ else:
     print(f"Price Delta: {bcolors.OKGREEN}{Decimal(coinPrice)-avgbuy}{bcolors.ENDC}")
 
 # Print the number of this coin you are holding in binance.
-print(f"Open Position: {round(Decimal(position['free']), 2)}")
+print(f"Open Position: {get_open_pos(coin)}")
 # Print the last price we bought for. LPP = Last Price Paid
 print(f"LPP: {lastbuy}")
 # Print out a dotted line and a blank line for formatting purposes.
