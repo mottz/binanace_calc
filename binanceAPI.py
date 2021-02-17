@@ -1,13 +1,12 @@
 #!/usr/bin/python3
-# This is a comment and does not run as code.
-# these next two lines import libraries into the code so we can use the functions provided by them.
+
 from binance.client import Client
 from decimal import *
-import sys
 import json
+import sys
 import os
 
-# Update your environmental variables with your Key and Secret for Binance API (read only permissions)
+# Update environmental variables with your Key and Secret for Binance API (read only permissions)
 key = os.environ['BINKEY']
 secret = os.environ['BINSEC']
 client = Client(key, secret, {"verify": True, "timeout": 20})
@@ -23,11 +22,7 @@ except IndexError:
     try:
         callLimit = int(input("Number of Transactions to get?: "))
     except ValueError:
-        i += 1
-        callLimit = int(input("You must enter a number of transactions: "))
-        if i == 1:
-            print("This is not really working out for me. Good bye.")
-            exit()
+        exit(1)
 
 # set the coin you want to pull transactions for.
 try:
@@ -38,16 +33,12 @@ except IndexError:
     try:
         coin = str(input("Enter the trading pair you want to track: "))
     except ValueError:
-        i += 1
-        coin = str(input("A trading pair must be all capital letters, please enter your trading pair: "))
-        if i > 1:
-            print("Your lack of intellect surpasses my understanding. Good bye.")
-            exit()
+        exit(1)
 
 
-
-# This class sets the colors for output text
 class bcolors:
+
+    # This class sets the colors for output text
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -89,7 +80,7 @@ def get_open_pos(coin):
 
 def realizedpl(orders):
 
-    buy = 0
+
     rpl = 0
     lastBuy = 0
     buycount = 0
@@ -98,50 +89,53 @@ def realizedpl(orders):
     #exit()
     sells = []
     buys = []
-
+    bcoincount = []
+    scoincount = []
 
     for p in orders:
         if p['side'] == 'BUY' and p['status'] == 'FILLED':
             # num of coins
-            #print(p['cummulativeQuoteQty'])
-            buy = Decimal(p['cummulativeQuoteQty'])
-            # cost
-            lastBuy += Decimal(p['cummulativeQuoteQty'])
+            buy = Decimal(p['price'])
+            # Coin Qty
+            bcoincount.append(Decimal(p['executedQty']))
             # over write var with last buy qty
             buycount += 1
-            #print("buy")
+            # sometimes binanace data shows a $0 buy that is not valid.
+            # we need to find these bad records and not use them in these calculations
             # add buy qty to list
-            buys.append(buy)
+            if buy > 0:
+                buys.append(buy)
+
         elif p['side'] == 'SELL' and p['status'] == 'FILLED':
+
             sellcount += 1
             # sell amount
-            sqqt = Decimal(p['cummulativeQuoteQty'])
-            # update sell list
-            sells.append(sqqt)
-    # calculate the difference in buys vs sells.
-    if len(buys) - len(sells) > 0:
-        # the difference is stored in var 'hold'.
-        hold = len(buys) - len(sells)
-        # Trim the last n buys from the buys list.
-        buys = buys[:len(buys) - hold]
-        # Add up buy amount.
-        tbuys = sum(buys)
-        # Add up the sell amount.
-        tsells = sum(sells)
-
-    else:
-        tbuys = sum(buys)
-        # Add up the sell amount.
-        tsells = sum(sells)
-        # calculate the realized profit or loss.
-    #print(f"buys list: {tbuys}")
-    #print(f"sells list: {tsells}")
-    # #print(f"hold over: {hold}")
-    # exit(0)
-
-    #print(f"buy count: {buycount}")
-    #print(f"sell count: {sellcount}")
-    return tsells - tbuys
+            sqqt = Decimal(p['price'])
+            # sell coin count
+            scoincount.append(Decimal(p['executedQty']))
+            # sometimes binanace data shows a $0 sale that is not valid.
+            # we need to find these bad records and not use them in these calculations
+            if sqqt > 0:
+                # update sell list
+                sells.append(sqqt)
+    # average buy cost
+    abc = sum(buys) / sum(bcoincount)
+    # average sell price
+    asc = sum(sells) / sum(scoincount)
+    rrpl = (abc - asc) / abc * 100
+    #Debug:
+    # print("--------------------Debug output---------------------------")
+    # print(f"PL: {rrpl}")
+    # print(f"Average buy: {abc}")
+    # print(f"Average sell: {asc}")
+    # print(f"buy count: {buycount}")
+    # print(f"total buy amount: {buy}")
+    # print(f"buys list: {buys}")
+    # print(f"sell count: {sellcount}")
+    # print(f"sells list: {sells}")
+    # print("--------------------End of Debug output---------------------")
+    #end of Debug
+    return int(rrpl)
 
 # these variables are set so we can increment them in the for loop below.
 buyp: int = 0
@@ -191,14 +185,17 @@ print("  ")
 print("-----------------------------------")
 
 # Call the profit and loss function.
-pl = realizedpl(orders)
+rrpl = realizedpl(orders)
 
-if pl < 0:
+if rrpl > 0:
+    rrplf = "{0:.0%}".format(rrpl)
+    rrplf = "-" + str(rrplf)
     # set the color to red if the P&L is negative.
-    print(f"Realized P/L: {bcolors.FAIL}{pl}{bcolors.ENDC}")
+    print(f"Realized P/L: {bcolors.FAIL}{rrplf} {bcolors.ENDC}")
 else:
+    rrplf = "{0:.0%}".format(abs(rrpl)/100)
     # set the color to green is the P&L is positive.
-    print(f"Realized P/L: {bcolors.OKGREEN}{pl}{bcolors.ENDC}")
+    print(f"Realized P/L: {bcolors.OKGREEN}{rrplf}{bcolors.ENDC}")
 
 if Decimal(coinPrice)-avgbuy < 0:
     # Set the color to red is the current price is lower than our average buy price.
@@ -222,4 +219,4 @@ print(f"Avg Buy Price: {bcolors.OKBLUE}{avgbuy}{bcolors.ENDC}")
 print("  ")
 print(f"Coins Sold: {round(coinsells, 4)}")
 print(f"Price Total: {sellp}")
-print(f"Avg Sell Price: {round(sellp/coinsells, 4)}")
+print(f"Avg Sell Price: {round(sellp/coinsells, 4) if sellp else 'none'}")
