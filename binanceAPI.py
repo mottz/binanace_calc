@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from binance.client import Client
+from binance.exceptions import BinanceAPIException
 from decimal import *
 import json
 import sys
@@ -51,7 +52,15 @@ class bcolors:
 
 
 # This makes the call to get your orders from binance history.
-orders = client.get_all_orders(symbol=coin, limit=callLimit)
+try:
+    orders = client.get_all_orders(symbol=coin, limit=callLimit)
+    # Check if there are any transactions for this trading pair.
+    if not orders:
+        print(f"No transactions found for trading pair {coin}")
+        exit(0)
+except BinanceAPIException as e:
+    print(e.message)
+    exit(1)
 cPrice = client.get_symbol_ticker(symbol=coin)
 coinPrice = cPrice['price']
 
@@ -119,9 +128,15 @@ def realizedpl(orders):
                 # update sell list
                 sells.append(sqqt)
     # average buy cost
-    abc = sum(buys) / sum(bcoincount)
+    try:
+        abc = sum(buys) / sum(bcoincount)
+    except DivisionByZero:
+        abc = "none"
     # average sell price
-    asc = sum(sells) / sum(scoincount)
+    try:
+        asc = sum(sells) / sum(scoincount)
+    except DivisionByZero:
+        asc = "none"
     rrpl = (abc - asc) / abc * 100
     #Debug:
     # print("--------------------Debug output---------------------------")
