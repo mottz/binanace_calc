@@ -36,6 +36,8 @@ except IndexError:
     except ValueError:
         exit(1)
 
+# Make the trading pair uppercase, just in case it's not typed that way.
+coin = coin.upper()
 
 class bcolors:
 
@@ -85,7 +87,7 @@ def get_open_pos(coin):
     # Data Example: {'asset': 'HBAR', 'free': '3.00012300', 'locked': '0.00000000'}
     asset = coin[:-3]
     balance = client.get_asset_balance(asset=asset)
-    return balance['free']
+    return Decimal(balance['free'])
 
 def realizedpl(orders):
 
@@ -189,10 +191,27 @@ for d in orders:
         # Add the price you got for this sale to the sellp variable.
         sellp += Decimal(d['cummulativeQuoteQty'])
 
+
+
 # find the average buy price
 avgbuy = round(buyp/coinsbuy, 4)
 
-# print out the count of transactions, the coin we're looking at and the current market price.
+def get_unrealized(coin, avgbuy, coinPrice):
+    # Calculate the unrealized gain/loss on the open position.
+    # avgbuy = int(float(avgbuy))
+    #openpos = int(float(get_open_pos(coin)))
+    openpos = get_open_pos(coin)
+    avgbuycost = avgbuy * openpos
+    avgmarketcost = int(float(coinPrice)) * openpos
+    unrealized = avgmarketcost - avgbuycost
+    # print(avgbuy)
+    # print(openpos)
+    # exit()
+    return unrealized
+
+
+
+# print out the count of transactions for the coin we're looking at and the current market price.
 print("Last " + str(callLimit) + " Transactions")
 print(f"COIN: {coin}")
 print(f"Current: {str(cPrice['price'])}")
@@ -221,6 +240,12 @@ else:
 
 # Print the number of this coin you are holding in binance.
 print(f"Open Position: {get_open_pos(coin)}")
+# Print the unrealized P/L.
+urpl = get_unrealized(coin, avgbuy, coinPrice)
+if urpl < 0:
+    print(f"Unrealized P/L: {bcolors.FAIL}${round(urpl, 4)}{bcolors.ENDC}")
+else:
+    print(f"Unrealized P/L: {bcolors.OKGREEN}${round(urpl, 4)}{bcolors.ENDC}")
 # Print the last price we bought for. LPP = Last Price Paid
 print(f"LPP: {lastbuy}")
 # Print out a dotted line and a blank line for formatting purposes.
