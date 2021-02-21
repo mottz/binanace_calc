@@ -28,16 +28,24 @@ except IndexError:
 # set the coin you want to pull transactions for.
 try:
     # The second CLA is the trading pair name.
-    coin = str(sys.argv[2])
+    c = str(sys.argv[2]).upper()
+    # Check if the coin/pair is delineated with a slash.
+    if "/" not in c:
+        print("Please enter trading pair as COIN/PAIR")
+        exit(3)
+    else:
+        # Remove the slash separating the trading pair.
+        coin = c.replace('/', '')
+        # Assign the asset (not trading pair) to the asset var.
+        choplen = len(c) - c.find('/')
+        asset = c[:-choplen]
+
 except IndexError:
     # Again if it's not found in the CLAs, we'll ask for it in the following prompt.
     try:
         coin = str(input("Enter the trading pair you want to track: "))
     except ValueError:
         exit(1)
-
-# Make the trading pair uppercase, just in case it's not typed that way.
-coin = coin.upper()
 
 class bcolors:
 
@@ -63,8 +71,12 @@ try:
 except BinanceAPIException as e:
     print(e.message)
     exit(1)
-cPrice = client.get_symbol_ticker(symbol=coin)
-coinPrice = cPrice['price']
+
+
+def get_market_quote(coin):
+    cPrice = client.get_symbol_ticker(symbol=coin)
+    coinPrice = cPrice['price']
+    return Decimal(coinPrice)
 
 ###############
 # DEBUG: Following lines print raw data from Binance, this is useful if you want to move the data
@@ -79,19 +91,18 @@ except IndexError:
 ###############
 
 
-def get_open_pos(coin):
+def get_open_pos(asset):
     # Get the free balance of the coin asset.
     # NOTE:If you have an open sell order the 'free' balance will not include these assets.
     #      the same is true for open buy orders, which is why we
     #      can't just add up free and locked assets to get the total.
     # Data Example: {'asset': 'HBAR', 'free': '3.00012300', 'locked': '0.00000000'}
-    asset = coin[:-3]
     balance = client.get_asset_balance(asset=asset)
     return Decimal(balance['free'])
 
 def realizedpl(orders):
-
-
+    # Calculate the realized profit or loss for the coin.
+    # This calculation is problematic because of the inability to match sells with buys.
     rpl = 0
     lastBuy = 0
     buycount = 0
@@ -119,7 +130,7 @@ def realizedpl(orders):
 
         elif p['side'] == 'SELL' and p['status'] == 'FILLED':
 
-            sellcount += 1
+
             # sell amount
             sqqt = Decimal(p['price'])
             # sell coin count
@@ -127,19 +138,23 @@ def realizedpl(orders):
             # sometimes binanace data shows a $0 sale that is not valid.
             # we need to find these bad records and not use them in these calculations
             if sqqt > 0:
+                sellcount += 1
                 # update sell list
                 sells.append(sqqt)
     # average buy cost
     try:
         abc = sum(buys) / sum(bcoincount)
-    except DivisionByZero:
-        abc = "none"
+    except ZeroDivisionError:
+        abc = 0
     # average sell price
     try:
         asc = sum(sells) / sum(scoincount)
-    except DivisionByZero:
-        asc = "none"
-    rrpl = (abc - asc) / abc * 100
+    except ZeroDivisionError:
+       asc = 0
+    if asc == 0:
+        rrpl = 0
+    else:
+        rrpl = (abc - asc)
     #Debug:
     # print("--------------------Debug output---------------------------")
     # print(f"PL: {rrpl}")
@@ -150,6 +165,7 @@ def realizedpl(orders):
     # print(f"buys list: {buys}")
     # print(f"sell count: {sellcount}")
     # print(f"sells list: {sells}")
+    # print(f"Total of sells: {sum(sells)}")
     # print("--------------------End of Debug output---------------------")
     #end of Debug
     return int(rrpl)
@@ -192,34 +208,34 @@ for d in orders:
         sellp += Decimal(d['cummulativeQuoteQty'])
 
 
-
 # find the average buy price
 avgbuy = round(buyp/coinsbuy, 4)
 
-def get_unrealized(coin, avgbuy, coinPrice):
+
+def get_unrealized(coin, asset, avgbuy):
     # Calculate the unrealized gain/loss on the open position.
     # avgbuy = int(float(avgbuy))
-    #openpos = int(float(get_open_pos(coin)))
-    openpos = get_open_pos(coin)
+    # openpos = int(float(get_open_pos(coin)))
+    openpos = get_open_pos(asset)
     avgbuycost = avgbuy * openpos
-    avgmarketcost = int(float(coinPrice)) * openpos
+    avgmarketcost = get_market_quote(coin) * openpos
     unrealized = avgmarketcost - avgbuycost
-    # print(avgbuy)
-    # print(openpos)
+    # print(avgbuycost)
+    # print(avgmarketcost)
     # exit()
     return unrealized
-
 
 
 # print out the count of transactions for the coin we're looking at and the current market price.
 print("Last " + str(callLimit) + " Transactions")
 print(f"COIN: {coin}")
-print(f"Current: {str(cPrice['price'])}")
+print(f"Current: {get_market_quote(coin)}")
 print("  ")
 print("-----------------------------------")
 
 # Call the profit and loss function.
 rrpl = realizedpl(orders)
+coinPrice = get_market_quote(coin)
 
 if rrpl > 0:
     rrplf = "{0:.0%}".format(rrpl)
@@ -239,9 +255,9 @@ else:
     print(f"Price Delta: {bcolors.OKGREEN}{Decimal(coinPrice)-avgbuy}{bcolors.ENDC}")
 
 # Print the number of this coin you are holding in binance.
-print(f"Open Position: {get_open_pos(coin)}")
+print(f"Open Position: {get_open_pos(asset)}")
 # Print the unrealized P/L.
-urpl = get_unrealized(coin, avgbuy, coinPrice)
+urpl = get_unrealized(coin, asset, avgbuy)
 if urpl < 0:
     print(f"Unrealized P/L: {bcolors.FAIL}${round(urpl, 4)}{bcolors.ENDC}")
 else:
